@@ -1,207 +1,485 @@
 import React, { useState, useEffect } from 'react';
-import { interactionService, Interaction } from '../services/api';
-import LoadingSpinner from '../components/LoadingSpinner';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Chip,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Select,
+  Grid,
+  Alert,
+  Pagination
+} from '@mui/material';
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Visibility as ViewIcon
+} from '@mui/icons-material';
+import { api } from '../services/api';
+
+interface Customer {
+  id: number;
+  name: string;
+  company?: string;
+}
+
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+interface Interaction {
+  id: number;
+  type: string;
+  subject: string;
+  content: string;
+  attachments?: string;
+  createdAt: string;
+  customer: Customer;
+  customerId: number;
+  user: User;
+  userId: number;
+}
+
+const typeLabels: { [key: string]: string } = {
+  call: 'Chiamata',
+  email: 'Email',
+  meeting: 'Riunione',
+  note: 'Nota'
+};
+
+const typeColors: { [key: string]: 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' } = {
+  call: 'primary',
+  email: 'info',
+  meeting: 'warning',
+  note: 'default'
+};
 
 const Interactions: React.FC = () => {
   const [interactions, setInteractions] = useState<Interaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [selectedType, setSelectedType] = useState<string>('');
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [error, setError] = useState<string>('');
+  const [open, setOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [viewingInteraction, setViewingInteraction] = useState<Interaction | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [typeFilter, setTypeFilter] = useState('');
+  const [customerFilter, setCustomerFilter] = useState('');
+
+  const [formData, setFormData] = useState({
+    type: 'note',
+    subject: '',
+    content: '',
+    attachments: '',
+    customerId: ''
+  });
 
   useEffect(() => {
-    loadInteractions();
-  }, [selectedType]);
+    fetchInteractions();
+    fetchCustomers();
+  }, [page, typeFilter, customerFilter]);
 
-  const loadInteractions = async () => {
+  const fetchInteractions = async () => {
     try {
-      setLoading(true);
-      const params: any = {};
-      if (selectedType) params.type = selectedType;
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '10'
+      });
       
-      const response = await interactionService.getAll(params);
-      setInteractions(response.interactions || response);
-    } catch (error: any) {
+      if (typeFilter) params.append('type', typeFilter);
+      if (customerFilter) params.append('customerId', customerFilter);
+
+      const response = await api.get(`/interactions?${params}`);
+      setInteractions(response.data.interactions);
+      setTotalPages(response.data.pagination.totalPages);
+    } catch (err) {
       setError('Errore nel caricamento delle interazioni');
-      console.error('Interactions error:', error);
-    } finally {
-      setLoading(false);
+      console.error(err);
     }
   };
 
-  const getTypeBadge = (type: string) => {
-    const colors = {
-      phone: 'bg-blue-100 text-blue-800',
-      email: 'bg-green-100 text-green-800',
-      meeting: 'bg-purple-100 text-purple-800',
-      chat: 'bg-yellow-100 text-yellow-800',
-      social: 'bg-pink-100 text-pink-800',
-      website: 'bg-gray-100 text-gray-800',
-      other: 'bg-gray-100 text-gray-800'
-    };
-    return colors[type as keyof typeof colors] || colors.other;
+  const fetchCustomers = async () => {
+    try {
+      const response = await api.get('/customers?limit=100');
+      setCustomers(response.data.customers);
+    } catch (err) {
+      console.error('Errore nel caricamento clienti:', err);
+    }
   };
 
-  const getTypeLabel = (type: string) => {
-    const labels = {
-      phone: 'Telefono',
-      email: 'Email',
-      meeting: 'Riunione',
-      chat: 'Chat',
-      social: 'Social',
-      website: 'Website',
-      other: 'Altro'
-    };
-    return labels[type as keyof typeof labels] || type;
+  const handleSubmit = async () => {
+    try {
+      const submitData = {
+        ...formData,
+        customerId: parseInt(formData.customerId)
+      };
+
+      if (editingId) {
+        await api.put(`/interactions/${editingId}`, submitData);
+      } else {
+        await api.post('/interactions', submitData);
+      }
+      
+      setOpen(false);
+      resetForm();
+      fetchInteractions();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Errore nel salvataggio');
+    }
   };
 
-  const getDirectionBadge = (direction: string) => {
-    const colors = {
-      inbound: 'bg-green-100 text-green-800',
-      outbound: 'bg-blue-100 text-blue-800'
-    };
-    return colors[direction as keyof typeof colors] || colors.inbound;
+  const handleDelete = async (id: number) => {
+    if (window.confirm('Sei sicuro di voler eliminare questa interazione?')) {
+      try {
+        await api.delete(`/interactions/${id}`);
+        fetchInteractions();
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'Errore nell\'eliminazione');
+      }
+    }
   };
 
-  const getDirectionLabel = (direction: string) => {
-    const labels = {
-      inbound: 'In entrata',
-      outbound: 'In uscita'
-    };
-    return labels[direction as keyof typeof labels] || direction;
+  const handleEdit = (interaction: Interaction) => {
+    setEditingId(interaction.id);
+    setFormData({
+      type: interaction.type,
+      subject: interaction.subject,
+      content: interaction.content,
+      attachments: interaction.attachments || '',
+      customerId: interaction.customerId.toString()
+    });
+    setOpen(true);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
-  }
+  const handleView = (interaction: Interaction) => {
+    setViewingInteraction(interaction);
+    setViewOpen(true);
+  };
+
+  const resetForm = () => {
+    setFormData({
+      type: 'note',
+      subject: '',
+      content: '',
+      attachments: '',
+      customerId: ''
+    });
+    setEditingId(null);
+  };
+
+  const formatDateTime = (dateString: string) => {
+    return new Date(dateString).toLocaleString('it-IT');
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="border-b border-gray-200 pb-4">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Interazioni</h1>
-            <p className="text-gray-600">Gestisci le tue interazioni con i clienti</p>
-          </div>
-          <button
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
-            onClick={() => {/* TODO: Add create interaction modal */}}
-          >
-            <PlusIcon className="h-5 w-5 mr-2" />
-            Nuova Interazione
-          </button>
-        </div>
-      </div>
+    <Box sx={{ p: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" component="h1">
+          Interazioni
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => {
+            resetForm();
+            setOpen(true);
+          }}
+        >
+          Nuova Interazione
+        </Button>
+      </Box>
 
-      {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <select
-            className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value)}
-          >
-            <option value="">Tutti i tipi</option>
-            <option value="phone">Telefono</option>
-            <option value="email">Email</option>
-            <option value="meeting">Riunione</option>
-            <option value="chat">Chat</option>
-            <option value="social">Social</option>
-            <option value="website">Website</option>
-            <option value="other">Altro</option>
-          </select>
-        </div>
-      </div>
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <p className="text-red-800">{error}</p>
-          <button
-            onClick={loadInteractions}
-            className="mt-2 bg-red-100 hover:bg-red-200 text-red-800 px-3 py-1 rounded text-sm"
-          >
-            Riprova
-          </button>
-        </div>
-      )}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel>Filtra per Tipo</InputLabel>
+                <Select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  label="Filtra per Tipo"
+                >
+                  <MenuItem value="">Tutti</MenuItem>
+                  {Object.entries(typeLabels).map(([value, label]) => (
+                    <MenuItem key={value} value={value}>{label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel>Filtra per Cliente</InputLabel>
+                <Select
+                  value={customerFilter}
+                  onChange={(e) => setCustomerFilter(e.target.value)}
+                  label="Filtra per Cliente"
+                >
+                  <MenuItem value="">Tutti</MenuItem>
+                  {customers.map((customer) => (
+                    <MenuItem key={customer.id} value={customer.id.toString()}>
+                      {customer.name} {customer.company && `(${customer.company})`}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
-      {/* Interactions Table */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul className="divide-y divide-gray-200">
-          {interactions.length === 0 ? (
-            <li className="px-6 py-4 text-center text-gray-500">
-              Nessuna interazione trovata
-            </li>
-          ) : (
-            interactions.map((interaction) => (
-              <li key={interaction.id} className="px-6 py-4 hover:bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center">
-                      <div className="flex-1">
-                        {interaction.subject && (
-                          <p className="text-sm font-medium text-gray-900">
-                            {interaction.subject}
-                          </p>
-                        )}
-                        <p className="text-sm text-gray-500 mt-1">
-                          {interaction.description}
-                        </p>
-                        {interaction.customer && (
-                          <p className="text-sm text-gray-500">
-                            Cliente: {interaction.customer.name}
-                          </p>
-                        )}
-                        {interaction.user && (
-                          <p className="text-sm text-gray-500">
-                            Utente: {interaction.user.firstName} {interaction.user.lastName}
-                          </p>
-                        )}
-                        {interaction.notes && (
-                          <p className="text-sm text-gray-500 mt-1">
-                            Note: {interaction.notes}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center space-x-4">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeBadge(interaction.type)}`}>
-                          {getTypeLabel(interaction.type)}
-                        </span>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDirectionBadge(interaction.direction)}`}>
-                          {getDirectionLabel(interaction.direction)}
-                        </span>
-                        {interaction.duration && (
-                          <span className="text-sm text-gray-500">
-                            {interaction.duration} min
-                          </span>
-                        )}
-                        <span className="text-sm text-gray-500">
-                          {new Date(interaction.date).toLocaleDateString()}
-                        </span>
-                        {interaction.isImportant && (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                            Importante
-                          </span>
-                        )}
-                        {interaction.needsFollowUp && (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                            Follow-up richiesto
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            ))
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Tipo</TableCell>
+              <TableCell>Oggetto</TableCell>
+              <TableCell>Cliente</TableCell>
+              <TableCell>Utente</TableCell>
+              <TableCell>Data</TableCell>
+              <TableCell>Azioni</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {interactions.map((interaction) => (
+              <TableRow key={interaction.id}>
+                <TableCell>
+                  <Chip
+                    label={typeLabels[interaction.type]}
+                    color={typeColors[interaction.type]}
+                    size="small"
+                  />
+                </TableCell>
+                <TableCell>
+                  <Typography variant="subtitle2">{interaction.subject}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {interaction.content.substring(0, 80)}...
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2">{interaction.customer.name}</Typography>
+                  {interaction.customer.company && (
+                    <Typography variant="caption" color="text.secondary">
+                      {interaction.customer.company}
+                    </Typography>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2">
+                    {interaction.user.firstName} {interaction.user.lastName}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {interaction.user.email}
+                  </Typography>
+                </TableCell>
+                <TableCell>{formatDateTime(interaction.createdAt)}</TableCell>
+                <TableCell>
+                  <IconButton onClick={() => handleView(interaction)} size="small">
+                    <ViewIcon />
+                  </IconButton>
+                  <IconButton onClick={() => handleEdit(interaction)} size="small">
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton onClick={() => handleDelete(interaction.id)} size="small">
+                    <DeleteIcon />
+                  </IconButton>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+        <Pagination
+          count={totalPages}
+          page={page}
+          onChange={(_, value) => setPage(value)}
+          color="primary"
+        />
+      </Box>
+
+      {/* Dialog per creazione/modifica */}
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          {editingId ? 'Modifica Interazione' : 'Nuova Interazione'}
+        </DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth required>
+                <InputLabel>Tipo</InputLabel>
+                <Select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  label="Tipo"
+                >
+                  {Object.entries(typeLabels).map(([value, label]) => (
+                    <MenuItem key={value} value={value}>{label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth required>
+                <InputLabel>Cliente</InputLabel>
+                <Select
+                  value={formData.customerId}
+                  onChange={(e) => setFormData({ ...formData, customerId: e.target.value })}
+                  label="Cliente"
+                >
+                  {customers.map((customer) => (
+                    <MenuItem key={customer.id} value={customer.id.toString()}>
+                      {customer.name} {customer.company && `(${customer.company})`}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Oggetto"
+                value={formData.subject}
+                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Contenuto"
+                value={formData.content}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                multiline
+                rows={6}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Allegati (URL o note)"
+                value={formData.attachments}
+                onChange={(e) => setFormData({ ...formData, attachments: e.target.value })}
+                helperText="Inserisci URL di file o note sugli allegati"
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)}>Annulla</Button>
+          <Button onClick={handleSubmit} variant="contained">
+            {editingId ? 'Aggiorna' : 'Crea'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog per visualizzazione */}
+      <Dialog open={viewOpen} onClose={() => setViewOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          Dettagli Interazione
+        </DialogTitle>
+        <DialogContent>
+          {viewingInteraction && (
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Tipo
+                </Typography>
+                <Chip
+                  label={typeLabels[viewingInteraction.type]}
+                  color={typeColors[viewingInteraction.type]}
+                  size="small"
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Data
+                </Typography>
+                <Typography variant="body2">
+                  {formatDateTime(viewingInteraction.createdAt)}
+                </Typography>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Cliente
+                </Typography>
+                <Typography variant="body2">
+                  {viewingInteraction.customer.name}
+                  {viewingInteraction.customer.company && (
+                    <span style={{ color: '#666' }}> ({viewingInteraction.customer.company})</span>
+                  )}
+                </Typography>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Utente
+                </Typography>
+                <Typography variant="body2">
+                  {viewingInteraction.user.firstName} {viewingInteraction.user.lastName}
+                  <br />
+                  <span style={{ color: '#666' }}>{viewingInteraction.user.email}</span>
+                </Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Oggetto
+                </Typography>
+                <Typography variant="body2">
+                  {viewingInteraction.subject}
+                </Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Contenuto
+                </Typography>
+                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                  {viewingInteraction.content}
+                </Typography>
+              </Grid>
+              {viewingInteraction.attachments && (
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Allegati
+                  </Typography>
+                  <Typography variant="body2">
+                    {viewingInteraction.attachments}
+                  </Typography>
+                </Grid>
+              )}
+            </Grid>
           )}
-        </ul>
-      </div>
-    </div>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setViewOpen(false)}>Chiudi</Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 };
 
