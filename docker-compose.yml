@@ -1,4 +1,7 @@
-version: '3.8'
+# ============================================
+# CRM PostgreSQL System - Docker Compose Configuration
+# Modern format without version (Docker Compose v2+)
+# ============================================
 
 services:
   # PostgreSQL Database
@@ -7,19 +10,19 @@ services:
     container_name: crm-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: crm_db
-      POSTGRES_USER: crm_user
-      POSTGRES_PASSWORD: crm_password_secure_2024
+      POSTGRES_DB: ${POSTGRES_DB:-crm_db}
+      POSTGRES_USER: ${POSTGRES_USER:-crm_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm_password_secure_2024}
       POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     ports:
-      - "4002:5432"
+      - "${POSTGRES_PORT:-4002}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/init-scripts:/docker-entrypoint-initdb.d
+      - ./backend/init-scripts:/docker-entrypoint-initdb.d:ro
     networks:
       - crm-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U crm_user -d crm_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm_user} -d ${POSTGRES_DB:-crm_db}"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -30,19 +33,22 @@ services:
     build: 
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        NODE_ENV: ${NODE_ENV:-development}
     container_name: crm-backend
     restart: unless-stopped
     ports:
-      - "4001:4001"
+      - "${BACKEND_PORT:-4001}:4001"
+    env_file:
+      - ./backend/.env
     environment:
-      NODE_ENV: production
-      PORT: 4001
+      # Override specific values for Docker environment
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: crm_db
-      DB_USER: crm_user
-      DB_PASSWORD: crm_password_secure_2024
-      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      NODE_ENV: ${NODE_ENV:-development}
+    volumes:
+      - ./backend/logs:/app/logs
+      - ./backend/uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,12 +66,17 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NODE_ENV: ${NODE_ENV:-development}
     container_name: crm-frontend
     restart: unless-stopped
     ports:
-      - "4000:80"
+      - "${FRONTEND_PORT:-4000}:80"
+    env_file:
+      - ./frontend/.env
     environment:
-      REACT_APP_API_URL: http://localhost:4001/api
+      # Override API URL for Docker environment
+      VITE_API_URL: http://localhost:4001/api
     depends_on:
       backend:
         condition: service_healthy
@@ -76,13 +87,33 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
+
+  # Database Administration (Optional)
+  adminer:
+    image: adminer:4.8.1
+    container_name: crm-adminer
+    restart: unless-stopped
+    ports:
+      - "${ADMINER_PORT:-4003}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: galkaev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - crm-network
+    profiles:
+      - admin
+      - full
 
 volumes:
   postgres_data:
     driver: local
-    name: crm_postgres_data
+    name: ${COMPOSE_PROJECT_NAME:-crm-postgres}_postgres_data
 
 networks:
   crm-network:
     driver: bridge
-    name: crm-network
+    name: ${NETWORK_NAME:-crm_network}
