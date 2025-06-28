@@ -1,203 +1,133 @@
 import { body, param, query } from 'express-validator';
-import { UserRole } from '../entity/User';
-import { CustomerStatus } from '../entity/Customer';
-import { OpportunityStage } from '../entity/Opportunity';
-import { ActivityType, ActivityStatus, ActivityPriority } from '../entity/Activity';
-import { InteractionType, InteractionDirection } from '../entity/Interaction';
 
-// Auth validations
-export const validateRegister = [
-    body('email')
-        .isEmail()
-        .normalizeEmail()
-        .withMessage('Valid email is required'),
-    body('password')
-        .isLength({ min: 6 })
-        .withMessage('Password must be at least 6 characters long'),
-    body('name')
-        .optional()
-        .trim()
-        .isLength({ min: 1, max: 255 })
-        .withMessage('Name must be between 1 and 255 characters'),
-    body('firstName')
-        .optional()
-        .trim()
-        .isLength({ max: 100 })
-        .withMessage('First name must be max 100 characters'),
-    body('lastName')
-        .optional()
-        .trim()
-        .isLength({ max: 100 })
-        .withMessage('Last name must be max 100 characters'),
-    body('role')
-        .optional()
-        .isIn(Object.values(UserRole))
-        .withMessage(`Role must be one of: ${Object.values(UserRole).join(', ')}`)
-];
-
+// Auth validation
 export const validateLogin = [
     body('email')
         .isEmail()
         .normalizeEmail()
-        .withMessage('Valid email is required'),
+        .withMessage('Email valida richiesta'),
     body('password')
         .notEmpty()
-        .withMessage('Password is required')
+        .withMessage('Password richiesta')
 ];
 
-export const validateChangePassword = [
-    body('currentPassword')
-        .notEmpty()
-        .withMessage('Current password is required'),
-    body('newPassword')
+export const validateRegister = [
+    body('email')
+        .isEmail()
+        .normalizeEmail()
+        .withMessage('Email valida richiesta'),
+    body('password')
         .isLength({ min: 6 })
-        .withMessage('New password must be at least 6 characters long')
+        .withMessage('Password deve essere di almeno 6 caratteri'),
+    body('firstName')
+        .trim()
+        .isLength({ min: 1 })
+        .withMessage('Nome richiesto'),
+    body('lastName')
+        .trim()
+        .isLength({ min: 1 })
+        .withMessage('Cognome richiesto')
 ];
 
-// Customer validations
+// Customer validation
 export const validateCustomer = [
     body('name')
         .trim()
-        .isLength({ min: 1, max: 255 })
-        .withMessage('Name is required and must be max 255 characters'),
-    body('company')
-        .optional()
-        .trim()
-        .isLength({ max: 255 })
-        .withMessage('Company must be max 255 characters'),
+        .isLength({ min: 1 })
+        .withMessage('Nome cliente richiesto'),
     body('email')
         .optional()
         .isEmail()
         .normalizeEmail()
-        .withMessage('Valid email is required'),
-    body('phone')
-        .optional()
-        .trim()
-        .isLength({ max: 50 })
-        .withMessage('Phone must be max 50 characters'),
+        .withMessage('Email valida richiesta'),
     body('status')
         .optional()
-        .isIn(Object.values(CustomerStatus))
-        .withMessage(`Status must be one of: ${Object.values(CustomerStatus).join(', ')}`)
+        .isIn(['prospect', 'active', 'inactive', 'lost'])
+        .withMessage('Status non valido')
 ];
 
-// Opportunity validations
+// Opportunity validation
 export const validateOpportunity = [
     body('title')
         .trim()
-        .isLength({ min: 1, max: 255 })
-        .withMessage('Title is required and must be max 255 characters'),
+        .isLength({ min: 1 })
+        .withMessage('Titolo opportunità richiesto'),
+    body('customerId')
+        .isInt({ min: 1 })
+        .withMessage('ID cliente valido richiesto'),
     body('value')
         .optional()
         .isFloat({ min: 0 })
-        .withMessage('Value must be a positive number'),
+        .withMessage('Valore deve essere positivo'),
     body('stage')
         .optional()
-        .isIn(Object.values(OpportunityStage))
-        .withMessage(`Stage must be one of: ${Object.values(OpportunityStage).join(', ')}`),
-    body('probability')
-        .optional()
-        .isInt({ min: 0, max: 100 })
-        .withMessage('Probability must be between 0 and 100'),
-    body('customerId')
-        .isInt({ min: 1 })
-        .withMessage('Valid customer ID is required')
+        .isIn(['lead', 'qualified', 'proposal', 'negotiation', 'closed-won', 'closed-lost'])
+        .withMessage('Stage non valido')
 ];
 
-// Activity validations
+// Activity validation
 export const validateActivity = [
     body('title')
         .trim()
-        .isLength({ min: 1, max: 255 })
-        .withMessage('Title is required and must be max 255 characters'),
-    body('type')
-        .optional()
-        .isIn(Object.values(ActivityType))
-        .withMessage(`Type must be one of: ${Object.values(ActivityType).join(', ')}`),
-    body('status')
-        .optional()
-        .isIn(Object.values(ActivityStatus))
-        .withMessage(`Status must be one of: ${Object.values(ActivityStatus).join(', ')}`),
-    body('priority')
-        .optional()
-        .isIn(Object.values(ActivityPriority))
-        .withMessage(`Priority must be one of: ${Object.values(ActivityPriority).join(', ')}`),
+        .isLength({ min: 1 })
+        .withMessage('Titolo attività richiesto'),
     body('customerId')
         .isInt({ min: 1 })
-        .withMessage('Valid customer ID is required'),
-    body('dueDate')
+        .withMessage('ID cliente valido richiesto'),
+    body('type')
         .optional()
-        .isISO8601()
-        .withMessage('Due date must be a valid ISO8601 date')
+        .isIn(['call', 'email', 'meeting', 'task', 'note', 'follow-up'])
+        .withMessage('Tipo attività non valido'),
+    body('status')
+        .optional()
+        .isIn(['pending', 'in_progress', 'completed', 'cancelled', 'overdue'])
+        .withMessage('Status attività non valido')
 ];
 
-// Interaction validations
+// Interaction validation
 export const validateInteraction = [
     body('description')
         .trim()
         .isLength({ min: 1 })
-        .withMessage('Description is required'),
-    body('type')
-        .optional()
-        .isIn(Object.values(InteractionType))
-        .withMessage(`Type must be one of: ${Object.values(InteractionType).join(', ')}`),
-    body('direction')
-        .optional()
-        .isIn(Object.values(InteractionDirection))
-        .withMessage(`Direction must be one of: ${Object.values(InteractionDirection).join(', ')}`),
+        .withMessage('Descrizione richiesta'),
     body('customerId')
         .isInt({ min: 1 })
-        .withMessage('Valid customer ID is required'),
+        .withMessage('ID cliente valido richiesto'),
+    body('type')
+        .optional()
+        .isIn(['phone', 'email', 'meeting', 'chat', 'social', 'website', 'other'])
+        .withMessage('Tipo interazione non valido'),
     body('date')
         .optional()
         .isISO8601()
-        .withMessage('Date must be a valid ISO8601 date')
+        .withMessage('Data valida richiesta')
 ];
 
-// Common parameter validations
+// Common validation
 export const validateId = [
     param('id')
         .isInt({ min: 1 })
-        .withMessage('Valid ID is required')
+        .withMessage('ID valido richiesto')
 ];
 
-// Query parameter validations
 export const validatePagination = [
     query('page')
         .optional()
         .isInt({ min: 1 })
-        .withMessage('Page must be a positive integer'),
+        .withMessage('Numero pagina deve essere positivo'),
     query('limit')
         .optional()
         .isInt({ min: 1, max: 100 })
-        .withMessage('Limit must be between 1 and 100'),
-    query('search')
-        .optional()
-        .trim()
-        .isLength({ min: 1, max: 100 })
-        .withMessage('Search term must be between 1 and 100 characters')
-];
-
-export const validateDateRange = [
-    query('startDate')
-        .optional()
-        .isISO8601()
-        .withMessage('Start date must be a valid ISO8601 date'),
-    query('endDate')
-        .optional()
-        .isISO8601()
-        .withMessage('End date must be a valid ISO8601 date')
+        .withMessage('Limite deve essere tra 1 e 100')
 ];
 
 export default {
-    validateRegister,
     validateLogin,
-    validateChangePassword,
+    validateRegister,
     validateCustomer,
     validateOpportunity,
     validateActivity,
     validateInteraction,
     validateId,
-    validatePagination,
-    validateDateRange
+    validatePagination
 };
