@@ -1,60 +1,49 @@
 import { Request, Response } from 'express';
 import { AppDataSource } from '../data-source';
-import { Opportunity, OpportunityStage } from '../entity/Opportunity';
+import { Opportunity } from '../entity/Opportunity';
+import { Customer } from '../entity/Customer';
 import { validationResult } from 'express-validator';
-import { ILike } from 'typeorm';
 
 export class OpportunityController {
     
     static async getAll(req: Request, res: Response) {
         try {
-            const errors = validationResult(req);
-            if (!errors.isEmpty()) {
-                return res.status(400).json({ errors: errors.array() });
-            }
-
-            const { page = 1, limit = 20, search, stage } = req.query;
-            const offset = (Number(page) - 1) * Number(limit);
-
+            const { stage, customerId, page = 1, limit = 10 } = req.query;
+            
             const opportunityRepository = AppDataSource.getRepository(Opportunity);
-            
-            let whereCondition: any = {};
-            
-            if (search) {
-                whereCondition = [
-                    { title: ILike(`%${search}%`) },
-                    { description: ILike(`%${search}%`) }
-                ];
-            }
-            
+            const queryBuilder = opportunityRepository.createQueryBuilder('opportunity')
+                .leftJoinAndSelect('opportunity.customer', 'customer');
+
+            // Filtri
             if (stage) {
-                if (Array.isArray(whereCondition)) {
-                    whereCondition = whereCondition.map(condition => ({ ...condition, stage }));
-                } else {
-                    whereCondition.stage = stage;
-                }
+                queryBuilder.where('opportunity.stage = :stage', { stage });
             }
 
-            const [opportunities, total] = await opportunityRepository.findAndCount({
-                where: whereCondition,
-                order: { createdAt: 'DESC' },
-                skip: offset,
-                take: Number(limit),
-                relations: ['customer', 'activities']
-            });
+            if (customerId) {
+                queryBuilder.andWhere('opportunity.customerId = :customerId', { customerId });
+            }
+
+            // Paginazione
+            const skip = (Number(page) - 1) * Number(limit);
+            queryBuilder.skip(skip).take(Number(limit));
+
+            // Ordinamento
+            queryBuilder.orderBy('opportunity.createdAt', 'DESC');
+
+            const [opportunities, total] = await queryBuilder.getManyAndCount();
 
             res.json({
                 opportunities,
                 pagination: {
-                    total,
                     page: Number(page),
                     limit: Number(limit),
+                    total,
                     totalPages: Math.ceil(total / Number(limit))
                 }
             });
         } catch (error) {
-            console.error('Opportunity getAll error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nel recupero opportunità:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
@@ -65,17 +54,17 @@ export class OpportunityController {
             
             const opportunity = await opportunityRepository.findOne({
                 where: { id: Number(id) },
-                relations: ['customer', 'activities']
+                relations: ['customer']
             });
 
             if (!opportunity) {
-                return res.status(404).json({ message: 'Opportunity not found' });
+                return res.status(404).json({ message: 'Opportunità non trovata' });
             }
 
             res.json(opportunity);
         } catch (error) {
-            console.error('Opportunity getById error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nel recupero opportunità:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
@@ -86,19 +75,35 @@ export class OpportunityController {
                 return res.status(400).json({ errors: errors.array() });
             }
 
-            const opportunityData = req.body;
-            const opportunityRepository = AppDataSource.getRepository(Opportunity);
+            const { customerId } = req.body;
             
-            const opportunity = opportunityRepository.create(opportunityData);
-            const savedOpportunity = await opportunityRepository.save(opportunity);
+            // Verifica che il cliente esista
+            const customerRepository = AppDataSource.getRepository(Customer);
+            const customer = await customerRepository.findOne({ where: { id: customerId } });
+            
+            if (!customer) {
+                return res.status(400).json({ message: 'Cliente non trovato' });
+            }
 
+            const opportunityRepository = AppDataSource.getRepository(Opportunity);
+            const newOpportunity = opportunityRepository.create(req.body);
+            
+            // Salva e ottieni l'entità salvata
+            const savedOpportunity = await opportunityRepository.save(newOpportunity) as unknown as Opportunity;
+            
+            // Ora newOpportunity dovrebbe avere l'id assegnato
+            const opportunityWithRelations = await opportunityRepository.findOne({
+                where: { id: savedOpportunity.id },
+                relations: ['customer']
+            });
+            
             res.status(201).json({
-                message: 'Opportunity created successfully',
-                opportunity: savedOpportunity
+                message: 'Opportunità creata con successo',
+                opportunity: opportunityWithRelations
             });
         } catch (error) {
-            console.error('Opportunity create error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nella creazione opportunità:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
@@ -110,24 +115,27 @@ export class OpportunityController {
             }
 
             const { id } = req.params;
-            const opportunityData = req.body;
             const opportunityRepository = AppDataSource.getRepository(Opportunity);
             
-            const opportunity = await opportunityRepository.findOne({ where: { id: Number(id) } });
+            let opportunity = await opportunityRepository.findOne({ 
+                where: { id: Number(id) },
+                relations: ['customer']
+            });
+            
             if (!opportunity) {
-                return res.status(404).json({ message: 'Opportunity not found' });
+                return res.status(404).json({ message: 'Opportunità non trovata' });
             }
 
-            Object.assign(opportunity, opportunityData);
-            const updatedOpportunity = await opportunityRepository.save(opportunity);
+            opportunityRepository.merge(opportunity, req.body);
+            await opportunityRepository.save(opportunity);
 
             res.json({
-                message: 'Opportunity updated successfully',
-                opportunity: updatedOpportunity
+                message: 'Opportunità aggiornata con successo',
+                opportunity
             });
         } catch (error) {
-            console.error('Opportunity update error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nell\'aggiornamento opportunità:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
@@ -138,108 +146,51 @@ export class OpportunityController {
             
             const opportunity = await opportunityRepository.findOne({ where: { id: Number(id) } });
             if (!opportunity) {
-                return res.status(404).json({ message: 'Opportunity not found' });
+                return res.status(404).json({ message: 'Opportunità non trovata' });
             }
 
             await opportunityRepository.remove(opportunity);
-
-            res.json({ message: 'Opportunity deleted successfully' });
+            
+            res.json({ message: 'Opportunità eliminata con successo' });
         } catch (error) {
-            console.error('Opportunity delete error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nell\'eliminazione opportunità:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
-    static async close(req: Request, res: Response) {
-        try {
-            const { id } = req.params;
-            const { won, reason } = req.body;
-            const opportunityRepository = AppDataSource.getRepository(Opportunity);
-            
-            const opportunity = await opportunityRepository.findOne({ where: { id: Number(id) } });
-            if (!opportunity) {
-                return res.status(404).json({ message: 'Opportunity not found' });
-            }
-
-            opportunity.close(won, reason);
-            const updatedOpportunity = await opportunityRepository.save(opportunity);
-
-            res.json({
-                message: `Opportunity ${won ? 'won' : 'lost'} successfully`,
-                opportunity: updatedOpportunity
-            });
-        } catch (error) {
-            console.error('Opportunity close error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-
-    static async getByStage(req: Request, res: Response) {
-        try {
-            const { stage } = req.params;
-            const opportunityRepository = AppDataSource.getRepository(Opportunity);
-            
-            const opportunities = await opportunityRepository.find({
-                where: { stage: stage as OpportunityStage },
-                relations: ['customer'],
-                order: { expectedCloseDate: 'ASC' }
-            });
-
-            res.json(opportunities);
-        } catch (error) {
-            console.error('Opportunity getByStage error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-
-    static async getPipelineStats(req: Request, res: Response) {
+    static async getStats(req: Request, res: Response) {
         try {
             const opportunityRepository = AppDataSource.getRepository(Opportunity);
             
-            const stats = await opportunityRepository
+            const totalOpportunities = await opportunityRepository.count();
+            
+            const stageStats = await opportunityRepository
                 .createQueryBuilder('opportunity')
                 .select('opportunity.stage', 'stage')
-                .addSelect('COUNT(opportunity.id)', 'count')
+                .addSelect('COUNT(*)', 'count')
                 .addSelect('SUM(opportunity.value)', 'totalValue')
-                .addSelect('AVG(opportunity.probability)', 'avgProbability')
                 .groupBy('opportunity.stage')
                 .getRawMany();
 
-            const pipeline = Object.values(OpportunityStage).map(stage => {
-                const stageStats = stats.find(s => s.stage === stage);
-                return {
-                    stage,
-                    count: stageStats ? parseInt(stageStats.count) : 0,
-                    totalValue: stageStats ? parseFloat(stageStats.totalValue || 0) : 0,
-                    avgProbability: stageStats ? parseFloat(stageStats.avgProbability || 0) : 0
-                };
+            const totalValue = await opportunityRepository
+                .createQueryBuilder('opportunity')
+                .select('SUM(opportunity.value)', 'total')
+                .getRawOne();
+
+            const averageValue = await opportunityRepository
+                .createQueryBuilder('opportunity')
+                .select('AVG(opportunity.value)', 'average')
+                .getRawOne();
+
+            res.json({
+                totalOpportunities,
+                totalValue: totalValue.total || 0,
+                averageValue: averageValue.average || 0,
+                stageStats
             });
-
-            res.json({ pipeline });
         } catch (error) {
-            console.error('Opportunity getPipelineStats error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-
-    static async getActivities(req: Request, res: Response) {
-        try {
-            const { id } = req.params;
-            const opportunityRepository = AppDataSource.getRepository(Opportunity);
-            
-            const opportunity = await opportunityRepository.findOne({
-                where: { id: Number(id) },
-                relations: ['activities']
-            });
-
-            if (!opportunity) {
-                return res.status(404).json({ message: 'Opportunity not found' });
-            }
-
-            res.json(opportunity.activities);
-        } catch (error) {
-            console.error('Opportunity getActivities error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nel recupero statistiche opportunità:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 }
