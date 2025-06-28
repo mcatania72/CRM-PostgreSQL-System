@@ -6,7 +6,7 @@ import {
   BriefcaseIcon,
   ClipboardDocumentListIcon,
   ChatBubbleLeftRightIcon,
-  TrendingUpIcon,
+  ArrowTrendingUpIcon,
   CurrencyDollarIcon
 } from '@heroicons/react/24/outline';
 
@@ -149,7 +149,7 @@ const Dashboard: React.FC = () => {
               Tasso di Conversione
             </h3>
             <div className="flex items-center">
-              <TrendingUpIcon className="h-8 w-8 text-green-500 mr-3" />
+              <ArrowTrendingUpIcon className="h-8 w-8 text-green-500 mr-3" />
               <div>
                 <div className="text-3xl font-bold text-gray-900">
                   {metrics.conversionRate.toFixed(1)}%
