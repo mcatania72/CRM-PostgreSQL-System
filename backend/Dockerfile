@@ -5,13 +5,15 @@ WORKDIR /app
 # Install dependencies
 FROM base AS deps
 COPY package*.json ./
-RUN npm ci --only=production
+# Use npm install instead of npm ci for compatibility
+RUN npm install --only=production
 
 # Build stage
 FROM base AS builder
 COPY package*.json ./
 COPY tsconfig.json ./
-RUN npm ci
+# Use npm install instead of npm ci for compatibility
+RUN npm install
 COPY src ./src
 RUN npm run build
 
