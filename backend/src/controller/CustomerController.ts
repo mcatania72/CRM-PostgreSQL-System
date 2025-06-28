@@ -1,61 +1,57 @@
 import { Request, Response } from 'express';
 import { AppDataSource } from '../data-source';
 import { Customer, CustomerStatus } from '../entity/Customer';
+import { Opportunity } from '../entity/Opportunity';
+import { Interaction } from '../entity/Interaction';
 import { validationResult } from 'express-validator';
-import { Like, ILike } from 'typeorm';
+import { Like } from 'typeorm';
 
 export class CustomerController {
     
     static async getAll(req: Request, res: Response) {
         try {
-            const errors = validationResult(req);
-            if (!errors.isEmpty()) {
-                return res.status(400).json({ errors: errors.array() });
-            }
-
-            const { page = 1, limit = 20, search, status } = req.query;
-            const offset = (Number(page) - 1) * Number(limit);
-
+            const { search, industry, status, page = 1, limit = 10 } = req.query;
+            
             const customerRepository = AppDataSource.getRepository(Customer);
-            
-            let whereCondition: any = {};
-            
+            const queryBuilder = customerRepository.createQueryBuilder('customer');
+
+            // Filtri di ricerca (PostgreSQL optimized)
             if (search) {
-                whereCondition = [
-                    { name: ILike(`%${search}%`) },
-                    { company: ILike(`%${search}%`) },
-                    { email: ILike(`%${search}%`) }
-                ];
-            }
-            
-            if (status) {
-                if (Array.isArray(whereCondition)) {
-                    whereCondition = whereCondition.map(condition => ({ ...condition, status }));
-                } else {
-                    whereCondition.status = status;
-                }
+                queryBuilder.where(
+                    'customer.name ILIKE :search OR customer.company ILIKE :search OR customer.email ILIKE :search',
+                    { search: `%${search}%` }
+                );
             }
 
-            const [customers, total] = await customerRepository.findAndCount({
-                where: whereCondition,
-                order: { createdAt: 'DESC' },
-                skip: offset,
-                take: Number(limit),
-                relations: ['opportunities', 'interactions']
-            });
+            if (industry) {
+                queryBuilder.andWhere('customer.industry = :industry', { industry });
+            }
+
+            if (status) {
+                queryBuilder.andWhere('customer.status = :status', { status });
+            }
+
+            // Paginazione
+            const skip = (Number(page) - 1) * Number(limit);
+            queryBuilder.skip(skip).take(Number(limit));
+
+            // Ordinamento
+            queryBuilder.orderBy('customer.createdAt', 'DESC');
+
+            const [customers, total] = await queryBuilder.getManyAndCount();
 
             res.json({
                 customers,
                 pagination: {
-                    total,
                     page: Number(page),
                     limit: Number(limit),
+                    total,
                     totalPages: Math.ceil(total / Number(limit))
                 }
             });
         } catch (error) {
-            console.error('Customer getAll error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nel recupero clienti:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
@@ -66,17 +62,17 @@ export class CustomerController {
             
             const customer = await customerRepository.findOne({
                 where: { id: Number(id) },
-                relations: ['opportunities', 'interactions', 'activities']
+                relations: ['opportunities', 'interactions']
             });
 
             if (!customer) {
-                return res.status(404).json({ message: 'Customer not found' });
+                return res.status(404).json({ message: 'Cliente non trovato' });
             }
 
             res.json(customer);
         } catch (error) {
-            console.error('Customer getById error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nel recupero cliente:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
@@ -87,19 +83,18 @@ export class CustomerController {
                 return res.status(400).json({ errors: errors.array() });
             }
 
-            const customerData = req.body;
             const customerRepository = AppDataSource.getRepository(Customer);
+            const customer = customerRepository.create(req.body);
             
-            const customer = customerRepository.create(customerData);
-            const savedCustomer = await customerRepository.save(customer);
-
+            await customerRepository.save(customer);
+            
             res.status(201).json({
-                message: 'Customer created successfully',
-                customer: savedCustomer
+                message: 'Cliente creato con successo',
+                customer
             });
         } catch (error) {
-            console.error('Customer create error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nella creazione cliente:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
@@ -111,24 +106,23 @@ export class CustomerController {
             }
 
             const { id } = req.params;
-            const customerData = req.body;
             const customerRepository = AppDataSource.getRepository(Customer);
             
-            const customer = await customerRepository.findOne({ where: { id: Number(id) } });
+            let customer = await customerRepository.findOne({ where: { id: Number(id) } });
             if (!customer) {
-                return res.status(404).json({ message: 'Customer not found' });
+                return res.status(404).json({ message: 'Cliente non trovato' });
             }
 
-            Object.assign(customer, customerData);
-            const updatedCustomer = await customerRepository.save(customer);
+            customerRepository.merge(customer, req.body);
+            await customerRepository.save(customer);
 
             res.json({
-                message: 'Customer updated successfully',
-                customer: updatedCustomer
+                message: 'Cliente aggiornato con successo',
+                customer
             });
         } catch (error) {
-            console.error('Customer update error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nell\'aggiornamento cliente:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
@@ -136,122 +130,88 @@ export class CustomerController {
         try {
             const { id } = req.params;
             const customerRepository = AppDataSource.getRepository(Customer);
+            const opportunityRepository = AppDataSource.getRepository(Opportunity);
+            const interactionRepository = AppDataSource.getRepository(Interaction);
             
+            // Trova il customer
             const customer = await customerRepository.findOne({ where: { id: Number(id) } });
             if (!customer) {
-                return res.status(404).json({ message: 'Customer not found' });
+                return res.status(404).json({ message: 'Cliente non trovato' });
             }
 
-            await customerRepository.remove(customer);
-
-            res.json({ message: 'Customer deleted successfully' });
-        } catch (error) {
-            console.error('Customer delete error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-
-    static async getOpportunities(req: Request, res: Response) {
-        try {
-            const { id } = req.params;
-            const customerRepository = AppDataSource.getRepository(Customer);
-            
-            const customer = await customerRepository.findOne({
-                where: { id: Number(id) },
-                relations: ['opportunities']
+            // Controlla dipendenze - opportunità
+            const opportunitiesCount = await opportunityRepository.count({ 
+                where: { customer: { id: Number(id) } }
             });
 
-            if (!customer) {
-                return res.status(404).json({ message: 'Customer not found' });
-            }
-
-            res.json(customer.opportunities);
-        } catch (error) {
-            console.error('Customer getOpportunities error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-
-    static async getActivities(req: Request, res: Response) {
-        try {
-            const { id } = req.params;
-            const customerRepository = AppDataSource.getRepository(Customer);
-            
-            const customer = await customerRepository.findOne({
-                where: { id: Number(id) },
-                relations: ['activities']
+            // Controlla dipendenze - interazioni
+            const interactionsCount = await interactionRepository.count({ 
+                where: { customer: { id: Number(id) } }
             });
 
-            if (!customer) {
-                return res.status(404).json({ message: 'Customer not found' });
-            }
-
-            res.json(customer.activities);
-        } catch (error) {
-            console.error('Customer getActivities error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-
-    static async getInteractions(req: Request, res: Response) {
-        try {
-            const { id } = req.params;
-            const customerRepository = AppDataSource.getRepository(Customer);
-            
-            const customer = await customerRepository.findOne({
-                where: { id: Number(id) },
-                relations: ['interactions']
-            });
-
-            if (!customer) {
-                return res.status(404).json({ message: 'Customer not found' });
-            }
-
-            res.json(customer.interactions);
-        } catch (error) {
-            console.error('Customer getInteractions error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-
-    static async getSummary(req: Request, res: Response) {
-        try {
-            const { id } = req.params;
-            const customerRepository = AppDataSource.getRepository(Customer);
-            
-            const customer = await customerRepository.findOne({
-                where: { id: Number(id) },
-                relations: ['opportunities', 'interactions', 'activities']
-            });
-
-            if (!customer) {
-                return res.status(404).json({ message: 'Customer not found' });
-            }
-
-            const summary = {
-                customer,
-                stats: {
-                    totalOpportunities: customer.opportunities?.length || 0,
-                    activeOpportunities: customer.opportunities?.filter(opp => 
-                        opp.stage !== 'closed-won' && opp.stage !== 'closed-lost'
-                    ).length || 0,
-                    totalValue: customer.opportunities?.reduce((sum, opp) => sum + (opp.value || 0), 0) || 0,
-                    wonValue: customer.opportunities?.filter(opp => opp.stage === 'closed-won')
-                        .reduce((sum, opp) => sum + (opp.value || 0), 0) || 0,
-                    totalInteractions: customer.interactions?.length || 0,
-                    recentInteractions: customer.interactions?.filter(int => {
-                        const daysDiff = (new Date().getTime() - new Date(int.date).getTime()) / (1000 * 60 * 60 * 24);
-                        return daysDiff <= 30;
-                    }).length || 0,
-                    totalActivities: customer.activities?.length || 0,
-                    pendingActivities: customer.activities?.filter(act => act.status === 'pending').length || 0
+            // Se ci sono dipendenze, restituisci errore informativo
+            if (opportunitiesCount > 0 || interactionsCount > 0) {
+                const dependencies = [];
+                if (opportunitiesCount > 0) {
+                    dependencies.push(`${opportunitiesCount} opportunità`);
                 }
-            };
+                if (interactionsCount > 0) {
+                    dependencies.push(`${interactionsCount} interazioni`);
+                }
 
-            res.json(summary);
+                return res.status(409).json({
+                    message: 'Impossibile eliminare il cliente',
+                    reason: 'Il cliente ha dati collegati che devono essere eliminati prima',
+                    dependencies: dependencies.join(' e '),
+                    details: {
+                        customerName: customer.name,
+                        opportunitiesCount,
+                        interactionsCount
+                    },
+                    suggestion: 'Elimina prima tutte le opportunità e interazioni associate a questo cliente, oppure trasferiscile ad un altro cliente.'
+                });
+            }
+
+            // Se non ci sono dipendenze, procedi con l'eliminazione
+            await customerRepository.remove(customer);
+            
+            console.log(`Cliente eliminato con successo: ${customer.name} (ID: ${id})`);
+            
+            res.json({ 
+                message: 'Cliente eliminato con successo',
+                deletedCustomer: {
+                    id: customer.id,
+                    name: customer.name
+                }
+            });
         } catch (error) {
-            console.error('Customer getSummary error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nell\'eliminazione cliente:', error);
+            
+            res.status(500).json({ 
+                message: 'Errore interno del server',
+                details: process.env.NODE_ENV === 'development' ? error : undefined
+            });
+        }
+    }
+
+    static async getStats(req: Request, res: Response) {
+        try {
+            const customerRepository = AppDataSource.getRepository(Customer);
+            
+            const totalCustomers = await customerRepository.count();
+            const activeCustomers = await customerRepository.count({ where: { status: CustomerStatus.ACTIVE } });
+            const prospectCustomers = await customerRepository.count({ where: { status: CustomerStatus.PROSPECT } });
+            const inactiveCustomers = await customerRepository.count({ where: { status: CustomerStatus.INACTIVE } });
+
+            res.json({
+                totalCustomers,
+                activeCustomers,
+                prospectCustomers,
+                inactiveCustomers
+            });
+        } catch (error) {
+            console.error('Errore nel recupero statistiche clienti:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 }

@@ -1,41 +1,39 @@
 import { Request, Response } from 'express';
 import { AppDataSource } from '../data-source';
-import { Customer } from '../entity/Customer';
-import { Opportunity } from '../entity/Opportunity';
-import { Activity } from '../entity/Activity';
+import { Customer, CustomerStatus } from '../entity/Customer';
+import { Opportunity, OpportunityStage } from '../entity/Opportunity';
+import { Activity, ActivityStatus } from '../entity/Activity';
 import { Interaction } from '../entity/Interaction';
-import { MoreThan, Between } from 'typeorm';
+import { AuthRequest } from '../middleware/auth';
 
 export class DashboardController {
     
-    static async getStats(req: Request, res: Response) {
+    static async getStats(req: AuthRequest, res: Response) {
         try {
-            const { startDate, endDate } = req.query;
-            
             const customerRepository = AppDataSource.getRepository(Customer);
             const opportunityRepository = AppDataSource.getRepository(Opportunity);
             const activityRepository = AppDataSource.getRepository(Activity);
             const interactionRepository = AppDataSource.getRepository(Interaction);
 
-            // Date range filter
-            let dateFilter = {};
-            if (startDate && endDate) {
-                dateFilter = {
-                    createdAt: Between(new Date(startDate as string), new Date(endDate as string))
-                };
-            }
+            // Statistiche clienti
+            const totalCustomers = await customerRepository.count();
+            const activeCustomers = await customerRepository.count({ where: { status: CustomerStatus.ACTIVE } });
+            const newCustomersThisMonth = await customerRepository
+                .createQueryBuilder('customer')
+                .where('customer.createdAt >= :startOfMonth', { 
+                    startOfMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1) 
+                })
+                .getCount();
 
-            // Basic counts
-            const totalCustomers = await customerRepository.count(dateFilter);
-            const totalOpportunities = await opportunityRepository.count(dateFilter);
-            const totalActivities = await activityRepository.count(dateFilter);
-            const totalInteractions = await interactionRepository.count(
-                startDate && endDate ? {
-                    date: Between(new Date(startDate as string), new Date(endDate as string))
-                } : {}
-            );
+            // Statistiche opportunità
+            const totalOpportunities = await opportunityRepository.count();
+            const openOpportunities = await opportunityRepository
+                .createQueryBuilder('opportunity')
+                .where('opportunity.stage NOT IN (:...closedStages)', { 
+                    closedStages: [OpportunityStage.CLOSED_WON, OpportunityStage.CLOSED_LOST] 
+                })
+                .getCount();
 
-            // Opportunity value stats
             const totalValue = await opportunityRepository
                 .createQueryBuilder('opportunity')
                 .select('SUM(opportunity.value)', 'total')
@@ -44,40 +42,71 @@ export class DashboardController {
             const wonValue = await opportunityRepository
                 .createQueryBuilder('opportunity')
                 .select('SUM(opportunity.value)', 'total')
-                .where('opportunity.stage = :stage', { stage: 'closed-won' })
+                .where('opportunity.stage = :stage', { stage: OpportunityStage.CLOSED_WON })
                 .getRawOne();
 
+            // Statistiche attività
+            const totalActivities = await activityRepository.count();
+            const pendingActivities = await activityRepository.count({ 
+                where: { status: ActivityStatus.PENDING } 
+            });
+
+            // Interazioni recenti
+            const totalInteractions = await interactionRepository.count();
+
             res.json({
-                customers: { total: totalCustomers },
-                opportunities: { 
-                    total: totalOpportunities,
-                    totalValue: parseFloat(totalValue?.total || 0),
-                    wonValue: parseFloat(wonValue?.total || 0)
+                customers: {
+                    total: totalCustomers,
+                    recent: newCustomersThisMonth
                 },
-                activities: { total: totalActivities },
-                interactions: { total: totalInteractions }
+                opportunities: {
+                    total: totalOpportunities,
+                    totalValue: parseFloat(totalValue?.total) || 0,
+                    wonValue: parseFloat(wonValue?.total) || 0,
+                    recent: openOpportunities
+                },
+                activities: {
+                    total: totalActivities
+                },
+                interactions: {
+                    total: totalInteractions
+                }
             });
         } catch (error) {
-            console.error('Dashboard getStats error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nel recupero statistiche dashboard:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
     static async getMetrics(req: Request, res: Response) {
         try {
             const opportunityRepository = AppDataSource.getRepository(Opportunity);
-            
-            const totalOpps = await opportunityRepository.count();
-            const wonOpps = await opportunityRepository.count({ where: { stage: 'closed-won' } });
-            const conversionRate = totalOpps > 0 ? (wonOpps / totalOpps) * 100 : 0;
+
+            // Calcola il tasso di conversione
+            const totalOpportunities = await opportunityRepository.count();
+            const wonOpportunities = await opportunityRepository.count({ 
+                where: { stage: OpportunityStage.CLOSED_WON } 
+            });
+            const lostOpportunities = await opportunityRepository.count({ 
+                where: { stage: OpportunityStage.CLOSED_LOST } 
+            });
+
+            const conversionRate = totalOpportunities > 0 
+                ? (wonOpportunities / totalOpportunities) * 100 
+                : 0;
 
             res.json({
-                conversionRate: parseFloat(conversionRate.toFixed(2)),
-                opportunityCounts: { total: totalOpps, won: wonOpps }
+                conversionRate,
+                opportunityCounts: {
+                    total: totalOpportunities,
+                    won: wonOpportunities,
+                    lost: lostOpportunities,
+                    active: totalOpportunities - wonOpportunities - lostOpportunities
+                }
             });
         } catch (error) {
-            console.error('Dashboard getMetrics error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nel recupero metriche:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
@@ -85,16 +114,18 @@ export class DashboardController {
         try {
             const activityRepository = AppDataSource.getRepository(Activity);
             
-            const recentActivities = await activityRepository.find({
-                relations: ['customer', 'opportunity'],
-                order: { createdAt: 'DESC' },
-                take: 10
-            });
+            const recentActivities = await activityRepository
+                .createQueryBuilder('activity')
+                .leftJoinAndSelect('activity.customer', 'customer')
+                .leftJoinAndSelect('activity.assignedTo', 'user')
+                .orderBy('activity.createdAt', 'DESC')
+                .limit(10)
+                .getMany();
 
             res.json(recentActivities);
         } catch (error) {
-            console.error('Dashboard getRecentActivity error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nel recupero attività recenti:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 
@@ -102,54 +133,27 @@ export class DashboardController {
         try {
             const opportunityRepository = AppDataSource.getRepository(Opportunity);
             
-            const pipeline = await opportunityRepository
+            const pipelineData = await opportunityRepository
                 .createQueryBuilder('opportunity')
                 .select('opportunity.stage', 'stage')
-                .addSelect('COUNT(opportunity.id)', 'count')
+                .addSelect('COUNT(*)', 'count')
                 .addSelect('SUM(opportunity.value)', 'totalValue')
+                .addSelect('AVG(opportunity.probability)', 'avgProbability')
                 .groupBy('opportunity.stage')
                 .getRawMany();
 
-            res.json({ pipeline });
-        } catch (error) {
-            console.error('Dashboard getPipeline error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
+            // Transform data to ensure proper number types
+            const formattedData = pipelineData.map(item => ({
+                stage: item.stage,
+                count: parseInt(item.count),
+                totalValue: parseFloat(item.totalValue) || 0,
+                avgProbability: parseFloat(item.avgProbability) || 0
+            }));
 
-    static async getPerformance(req: Request, res: Response) {
-        try {
-            res.json({ message: 'Performance metrics coming soon' });
+            res.json(formattedData);
         } catch (error) {
-            console.error('Dashboard getPerformance error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-
-    static async getRevenueChart(req: Request, res: Response) {
-        try {
-            res.json({ message: 'Revenue chart coming soon' });
-        } catch (error) {
-            console.error('Dashboard getRevenueChart error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-
-    static async getPipelineChart(req: Request, res: Response) {
-        try {
-            res.json({ message: 'Pipeline chart coming soon' });
-        } catch (error) {
-            console.error('Dashboard getPipelineChart error:', error);
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-
-    static async getActivityChart(req: Request, res: Response) {
-        try {
-            res.json({ message: 'Activity chart coming soon' });
-        } catch (error) {
-            console.error('Dashboard getActivityChart error:', error);
-            res.status(500).json({ message: 'Internal server error' });
+            console.error('Errore nel recupero pipeline:', error);
+            res.status(500).json({ message: 'Errore interno del server' });
         }
     }
 }
