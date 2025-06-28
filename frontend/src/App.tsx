@@ -1,5 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { CssBaseline } from '@mui/material';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -9,7 +11,17 @@ import Opportunities from './pages/Opportunities';
 import Activities from './pages/Activities';
 import Interactions from './pages/Interactions';
 import LoadingSpinner from './components/LoadingSpinner';
-import './index.css';
+
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#1976d2',
+    },
+    secondary: {
+      main: '#dc004e',
+    },
+  },
+});
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useAuth();
@@ -57,13 +69,14 @@ function AppRoutes() {
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
       <AuthProvider>
         <Router>
           <AppRoutes />
         </Router>
       </AuthProvider>
-    </div>
+    </ThemeProvider>
   );
 }
 
