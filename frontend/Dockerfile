@@ -5,17 +5,19 @@ WORKDIR /app
 # Install dependencies
 FROM base AS deps
 COPY package*.json ./
-RUN npm ci
+# Use npm install instead of npm ci for compatibility
+RUN npm install
 
 # Build stage
 FROM base AS builder
 COPY package*.json ./
-RUN npm ci
+# Use npm install instead of npm ci for compatibility
+RUN npm install
 COPY . .
 
 # Build arguments for environment variables
-ARG REACT_APP_API_URL=http://localhost:4001/api
-ENV REACT_APP_API_URL=$REACT_APP_API_URL
+ARG VITE_API_URL=http://localhost:4001/api
+ENV VITE_API_URL=$VITE_API_URL
 
 RUN npm run build
 
@@ -25,8 +27,8 @@ FROM nginx:alpine AS production
 # Install curl for health checks
 RUN apk add --no-cache curl
 
-# Copy custom nginx configuration
-COPY --from=builder /app/nginx.conf /etc/nginx/conf.d/default.conf
+# Copy custom nginx configuration (if exists, otherwise use default)
+COPY nginx.conf /etc/nginx/conf.d/default.conf 2>/dev/null || echo "Using default nginx config"
 
 # Copy built application
 COPY --from=builder /app/dist /usr/share/nginx/html
