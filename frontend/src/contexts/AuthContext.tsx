@@ -1,21 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authService } from '../services/authService';
-
-interface User {
-  id: number;
-  email: string;
-  name: string;
-  firstName?: string;
-  lastName?: string;
-  role: string;
-}
+import { User, authService } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
-  loading: boolean;
+  token: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  updateProfile: (data: Partial<User>) => Promise<void>;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,57 +25,66 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    checkAuthStatus();
-  }, []);
+    const initAuth = async () => {
+      const storedToken = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
 
-  const checkAuthStatus = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      if (token) {
-        const userData = await authService.getProfile();
-        setUser(userData);
+      if (storedToken && storedUser) {
+        setToken(storedToken);
+        setUser(JSON.parse(storedUser));
+        
+        try {
+          // Verifica che il token sia ancora valido
+          const profile = await authService.getProfile();
+          setUser(profile);
+        } catch (error) {
+          console.warn('Token expired or invalid, logging out');
+          // Token non valido, rimuovi i dati
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setToken(null);
+          setUser(null);
+        }
       }
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      localStorage.removeItem('token');
-    } finally {
-      setLoading(false);
-    }
-  };
+      
+      setIsLoading(false);
+    };
+
+    initAuth();
+  }, []);
 
   const login = async (email: string, password: string) => {
     try {
       const response = await authService.login(email, password);
-      localStorage.setItem('token', response.token);
+      
+      setToken(response.token);
       setUser(response.user);
+      
+      localStorage.setItem('token', response.token);
+      localStorage.setItem('user', JSON.stringify(response.user));
     } catch (error) {
+      console.error('Login failed:', error);
       throw error;
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    setToken(null);
     setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
   };
 
-  const updateProfile = async (data: Partial<User>) => {
-    try {
-      const updatedUser = await authService.updateProfile(data);
-      setUser(updatedUser);
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  const value = {
+  const value: AuthContextType = {
     user,
-    loading,
+    token,
     login,
     logout,
-    updateProfile
+    isLoading,
   };
 
   return (
