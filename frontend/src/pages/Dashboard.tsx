@@ -1,19 +1,66 @@
 import React, { useState, useEffect } from 'react';
-import { dashboardService, DashboardStats, DashboardMetrics, PipelineData } from '../services/api';
-import LoadingSpinner from '../components/LoadingSpinner';
 import {
-  UsersIcon,
-  BriefcaseIcon,
-  ClipboardDocumentListIcon,
-  ChatBubbleLeftRightIcon,
-  ArrowTrendingUpIcon,
-  CurrencyDollarIcon
-} from '@heroicons/react/24/outline';
+  Box,
+  Grid,
+  Card,
+  CardContent,
+  Typography,
+  CircularProgress,
+  Alert,
+} from '@mui/material';
+import {
+  People,
+  TrendingUp,
+  Assignment,
+  Chat,
+} from '@mui/icons-material';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+} from 'recharts';
+import { dashboardService, DashboardStats } from '../services/api';
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+
+interface StatCardProps {
+  title: string;
+  value: number;
+  icon: React.ReactNode;
+  color: string;
+}
+
+const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
+  <Card>
+    <CardContent>
+      <Box display="flex" alignItems="center" justifyContent="space-between">
+        <Box>
+          <Typography color="textSecondary" gutterBottom variant="body2">
+            {title}
+          </Typography>
+          <Typography variant="h4" component="h2">
+            {value}
+          </Typography>
+        </Box>
+        <Box sx={{ color, fontSize: 40 }}>
+          {icon}
+        </Box>
+      </Box>
+    </CardContent>
+  </Card>
+);
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-  const [pipeline, setPipeline] = useState<PipelineData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -24,18 +71,10 @@ const Dashboard: React.FC = () => {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const [statsData, metricsData, pipelineData] = await Promise.all([
-        dashboardService.getStats(),
-        dashboardService.getMetrics(),
-        dashboardService.getPipeline()
-      ]);
-      
-      setStats(statsData);
-      setMetrics(metricsData);
-      setPipeline(pipelineData);
-    } catch (error: any) {
-      setError('Errore nel caricamento dei dati dashboard');
-      console.error('Dashboard error:', error);
+      const data = await dashboardService.getStats();
+      setStats(data);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Errore nel caricamento dei dati');
     } finally {
       setLoading(false);
     }
@@ -43,178 +82,245 @@ const Dashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingSpinner size="lg" />
-      </div>
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
+      </Box>
     );
   }
 
   if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 rounded-md p-4">
-        <p className="text-red-800">{error}</p>
-        <button
-          onClick={loadDashboardData}
-          className="mt-2 bg-red-100 hover:bg-red-200 text-red-800 px-3 py-1 rounded text-sm"
-        >
-          Riprova
-        </button>
-      </div>
-    );
+    return <Alert severity="error">{error}</Alert>;
   }
 
-  const statCards = [
-    {
-      name: 'Clienti Totali',
-      value: stats?.customers.total || 0,
-      icon: UsersIcon,
-      color: 'blue',
-      subtitle: `${stats?.customers.recent || 0} questo mese`
-    },
-    {
-      name: 'Opportunità',
-      value: stats?.opportunities.total || 0,
-      icon: BriefcaseIcon,
-      color: 'green',
-      subtitle: `€${(stats?.opportunities.totalValue || 0).toLocaleString()}`
-    },
-    {
-      name: 'Attività',
-      value: stats?.activities.total || 0,
-      icon: ClipboardDocumentListIcon,
-      color: 'yellow',
-      subtitle: 'Attività totali'
-    },
-    {
-      name: 'Interazioni',
-      value: stats?.interactions.total || 0,
-      icon: ChatBubbleLeftRightIcon,
-      color: 'purple',
-      subtitle: 'Interazioni totali'
-    }
-  ];
+  if (!stats) {
+    return <Alert severity="warning">Nessun dato disponibile</Alert>;
+  }
 
-  const getColorClasses = (color: string) => {
-    const colors = {
-      blue: 'bg-blue-500 text-white',
-      green: 'bg-green-500 text-white',
-      yellow: 'bg-yellow-500 text-white',
-      purple: 'bg-purple-500 text-white'
-    };
-    return colors[color as keyof typeof colors] || colors.blue;
-  };
+  const opportunityStageData = stats.charts.opportunitiesByStage.map(item => ({
+    name: item.stage,
+    value: parseInt(item.count),
+    totalValue: parseFloat(item.totalValue || 0),
+  }));
+
+  const activityTypeData = stats.charts.activitiesByType.map(item => ({
+    name: item.type,
+    value: parseInt(item.count),
+  }));
+
+  const customerTrendData = stats.charts.customerTrend.map(item => ({
+    month: item.month,
+    customers: parseInt(item.count),
+  }));
+
+  const salesPerformanceData = stats.charts.salesPerformance.map(item => ({
+    month: item.month,
+    count: parseInt(item.count),
+    revenue: parseFloat(item.totalValue || 0),
+  }));
 
   return (
-    <div className="space-y-6">
-      <div className="border-b border-gray-200 pb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600">Panoramica del sistema CRM PostgreSQL</p>
-      </div>
+    <Box>
+      <Typography variant="h4" gutterBottom>
+        Dashboard
+      </Typography>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {statCards.map((stat) => (
-          <div key={stat.name} className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className={`p-3 rounded-md ${getColorClasses(stat.color)}`}>
-                    <stat.icon className="h-6 w-6" />
-                  </div>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      {stat.name}
-                    </dt>
-                    <dd className="text-lg font-medium text-gray-900">
-                      {stat.value.toLocaleString()}
-                    </dd>
-                    <dd className="text-sm text-gray-500">
-                      {stat.subtitle}
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Statistiche principali */}
+      <Grid container spacing={3} mb={4}>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            title="Clienti Totali"
+            value={stats.customers.total}
+            icon={<People />}
+            color="#2196f3"
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            title="Opportunità Aperte"
+            value={stats.opportunities.open}
+            icon={<TrendingUp />}
+            color="#4caf50"
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            title="Attività Pendenti"
+            value={stats.activities.pending}
+            icon={<Assignment />}
+            color="#ff9800"
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            title="Interazioni Settimana"
+            value={stats.interactions.thisWeek}
+            icon={<Chat />}
+            color="#9c27b0"
+          />
+        </Grid>
+      </Grid>
 
-      {/* Metrics */}
-      {metrics && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white shadow rounded-lg p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Tasso di Conversione
-            </h3>
-            <div className="flex items-center">
-              <ArrowTrendingUpIcon className="h-8 w-8 text-green-500 mr-3" />
-              <div>
-                <div className="text-3xl font-bold text-gray-900">
-                  {metrics.conversionRate.toFixed(1)}%
-                </div>
-                <div className="text-sm text-gray-500">
-                  {metrics.opportunityCounts.won} su {metrics.opportunityCounts.total} opportunità
-                </div>
-              </div>
-            </div>
-          </div>
+      {/* Grafici */}
+      <Grid container spacing={3}>
+        {/* Opportunità per stadio */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Opportunità per Stadio
+              </Typography>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={opportunityStageData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, value }) => `${name}: ${value}`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {opportunityStageData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </Grid>
 
-          <div className="bg-white shadow rounded-lg p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Valore Vinto
-            </h3>
-            <div className="flex items-center">
-              <CurrencyDollarIcon className="h-8 w-8 text-blue-500 mr-3" />
-              <div>
-                <div className="text-3xl font-bold text-gray-900">
-                  €{(stats?.opportunities.wonValue || 0).toLocaleString()}
-                </div>
-                <div className="text-sm text-gray-500">
-                  Valore totale delle opportunità vinte
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+        {/* Attività per tipo */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Attività per Tipo
+              </Typography>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={activityTypeData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#8884d8" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </Grid>
 
-      {/* Pipeline */}
-      {pipeline.length > 0 && (
-        <div className="bg-white shadow rounded-lg">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900">Pipeline Vendite</h3>
-          </div>
-          <div className="p-6">
-            <div className="space-y-4">
-              {pipeline.map((stage) => (
-                <div key={stage.stage} className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-900 capitalize">
-                        {stage.stage.replace('-', ' ')}
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        {stage.count} opportunità
-                      </span>
-                    </div>
-                    <div className="mt-1 text-sm text-gray-600">
-                      €{stage.totalValue.toLocaleString()}
-                      {stage.avgProbability && (
-                        <span className="ml-2 text-xs text-gray-400">
-                          ({stage.avgProbability.toFixed(0)}% prob. media)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+        {/* Trend clienti */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Trend Clienti (Ultimi 6 mesi)
+              </Typography>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={customerTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line 
+                    type="monotone" 
+                    dataKey="customers" 
+                    stroke="#8884d8" 
+                    strokeWidth={2}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Performance vendite */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Performance Vendite
+              </Typography>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={salesPerformanceData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip 
+                    formatter={(value, name) => [
+                      name === 'revenue' ? `€${value.toLocaleString()}` : value,
+                      name === 'revenue' ? 'Fatturato' : 'Vendite'
+                    ]}
+                  />
+                  <Bar dataKey="count" fill="#8884d8" name="count" />
+                  <Bar dataKey="revenue" fill="#82ca9d" name="revenue" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Statistiche aggiuntive */}
+      <Grid container spacing={3} mt={2}>
+        <Grid item xs={12} md={4}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Riepilogo Clienti
+              </Typography>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Clienti Attivi: {stats.customers.active}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Nuovi questo mese: {stats.customers.newThisMonth}
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} md={4}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Riepilogo Opportunità
+              </Typography>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Valore totale: €{stats.opportunities.totalValue.toLocaleString()}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Opportunità vinte: {stats.opportunities.won}
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} md={4}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Riepilogo Attività
+              </Typography>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Attività in scadenza: {stats.activities.overdue}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Totale attività: {stats.activities.total}
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+    </Box>
   );
 };
 
