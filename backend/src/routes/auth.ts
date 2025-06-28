@@ -1,19 +1,30 @@
 import { Router } from 'express';
+import { body } from 'express-validator';
 import { AuthController } from '../controller/AuthController';
-import { validateRegister, validateLogin, validateChangePassword } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
-// Public routes
-router.post('/register', validateRegister, AuthController.register);
-router.post('/login', validateLogin, AuthController.login);
+// Validazioni per la registrazione
+const registerValidation = [
+    body('email').isEmail().withMessage('Email non valida'),
+    body('password').isLength({ min: 6 }).withMessage('Password deve essere di almeno 6 caratteri'),
+    body('firstName').notEmpty().withMessage('Nome richiesto'),
+    body('lastName').notEmpty().withMessage('Cognome richiesto')
+];
 
-// Protected routes
+// Validazioni per il login
+const loginValidation = [
+    body('email').isEmail().withMessage('Email non valida'),
+    body('password').notEmpty().withMessage('Password richiesta')
+];
+
+// Routes pubbliche
+router.post('/register', registerValidation, AuthController.register);
+router.post('/login', loginValidation, AuthController.login);
+
+// Routes protette
 router.get('/profile', authenticateToken, AuthController.getProfile);
-router.put('/profile', authenticateToken, AuthController.updateProfile);
-router.post('/change-password', authenticateToken, validateChangePassword, AuthController.changePassword);
-router.post('/refresh', authenticateToken, AuthController.refreshToken);
 router.get('/users', authenticateToken, AuthController.getUsers);
 
 export default router;

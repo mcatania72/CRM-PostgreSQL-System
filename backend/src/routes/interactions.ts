@@ -1,24 +1,26 @@
 import { Router } from 'express';
+import { body } from 'express-validator';
 import { InteractionController } from '../controller/InteractionController';
-import { validateInteraction, validateId, validatePagination, validateDateRange } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
-// All routes require authentication
+// Tutte le routes richiedono autenticazione
 router.use(authenticateToken);
 
-// Interaction CRUD routes
-router.get('/', validatePagination, validateDateRange, InteractionController.getAll);
-router.get('/:id', validateId, InteractionController.getById);
-router.post('/', validateInteraction, InteractionController.create);
-router.put('/:id', validateId, validateInteraction, InteractionController.update);
-router.delete('/:id', validateId, InteractionController.delete);
+// Validazioni per interaction
+const interactionValidation = [
+    body('type').isIn(['phone', 'email', 'meeting', 'chat', 'social', 'website', 'other']).withMessage('Tipo non valido'),
+    body('direction').isIn(['inbound', 'outbound']).withMessage('Direzione non valida'),
+    body('description').notEmpty().withMessage('Descrizione richiesta'),
+    body('customerId').isInt().withMessage('Customer ID richiesto'),
+    body('date').isISO8601().withMessage('Data non valida')
+];
 
-// Additional interaction routes
-router.get('/customer/:customerId', validateId, InteractionController.getByCustomer);
-router.get('/user/:userId', validateId, InteractionController.getByUser);
-router.get('/recent/:days', InteractionController.getRecent);
-router.get('/stats/summary', InteractionController.getStats);
+router.get('/', InteractionController.getAll);
+router.get('/:id', InteractionController.getById);
+router.post('/', interactionValidation, InteractionController.create);
+router.put('/:id', interactionValidation, InteractionController.update);
+router.delete('/:id', InteractionController.delete);
 
 export default router;

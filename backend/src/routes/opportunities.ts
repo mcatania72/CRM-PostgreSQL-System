@@ -1,24 +1,25 @@
 import { Router } from 'express';
+import { body } from 'express-validator';
 import { OpportunityController } from '../controller/OpportunityController';
-import { validateOpportunity, validateId, validatePagination } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
-// All routes require authentication
+// Tutte le routes richiedono autenticazione
 router.use(authenticateToken);
 
-// Opportunity CRUD routes
-router.get('/', validatePagination, OpportunityController.getAll);
-router.get('/:id', validateId, OpportunityController.getById);
-router.post('/', validateOpportunity, OpportunityController.create);
-router.put('/:id', validateId, validateOpportunity, OpportunityController.update);
-router.delete('/:id', validateId, OpportunityController.delete);
+// Validazioni per opportunity
+const opportunityValidation = [
+    body('title').notEmpty().withMessage('Titolo richiesto'),
+    body('customerId').isInt().withMessage('Customer ID richiesto'),
+    body('stage').isIn(['lead', 'qualified', 'proposal', 'negotiation', 'closed-won', 'closed-lost']).withMessage('Stage non valido'),
+    body('value').optional().isFloat({ min: 0 }).withMessage('Valore deve essere positivo')
+];
 
-// Additional opportunity routes
-router.get('/:id/activities', validateId, OpportunityController.getActivities);
-router.post('/:id/close', validateId, OpportunityController.close);
-router.get('/stage/:stage', OpportunityController.getByStage);
-router.get('/stats/pipeline', OpportunityController.getPipelineStats);
+router.get('/', OpportunityController.getAll);
+router.get('/:id', OpportunityController.getById);
+router.post('/', opportunityValidation, OpportunityController.create);
+router.put('/:id', opportunityValidation, OpportunityController.update);
+router.delete('/:id', OpportunityController.delete);
 
 export default router;

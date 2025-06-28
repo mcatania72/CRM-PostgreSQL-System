@@ -1,25 +1,27 @@
 import { Router } from 'express';
+import { body } from 'express-validator';
 import { ActivityController } from '../controller/ActivityController';
-import { validateActivity, validateId, validatePagination, validateDateRange } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
-// All routes require authentication
+// Tutte le routes richiedono autenticazione
 router.use(authenticateToken);
 
-// Activity CRUD routes
-router.get('/', validatePagination, validateDateRange, ActivityController.getAll);
-router.get('/:id', validateId, ActivityController.getById);
-router.post('/', validateActivity, ActivityController.create);
-router.put('/:id', validateId, validateActivity, ActivityController.update);
-router.delete('/:id', validateId, ActivityController.delete);
+// Validazioni per activity
+const activityValidation = [
+    body('title').notEmpty().withMessage('Titolo richiesto'),
+    body('type').isIn(['call', 'email', 'meeting', 'task', 'note', 'follow-up']).withMessage('Tipo non valido'),
+    body('status').isIn(['pending', 'in_progress', 'completed', 'cancelled', 'overdue']).withMessage('Status non valido'),
+    body('priority').isIn(['low', 'medium', 'high', 'urgent']).withMessage('Priorità non valida'),
+    body('customerId').isInt().withMessage('Customer ID richiesto')
+];
 
-// Additional activity routes
-router.post('/:id/complete', validateId, ActivityController.complete);
-router.post('/:id/cancel', validateId, ActivityController.cancel);
-router.get('/user/:userId', validateId, ActivityController.getByUser);
-router.get('/due/today', ActivityController.getDueToday);
-router.get('/due/overdue', ActivityController.getOverdue);
+router.get('/', ActivityController.getAll);
+router.get('/:id', ActivityController.getById);
+router.post('/', activityValidation, ActivityController.create);
+router.put('/:id', activityValidation, ActivityController.update);
+router.delete('/:id', ActivityController.delete);
+router.patch('/:id/complete', ActivityController.markAsCompleted);
 
 export default router;
