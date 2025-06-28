@@ -1,19 +1,20 @@
 import React from 'react';
-import { Box, CircularProgress } from '@mui/material';
+import { Box, CircularProgress, Typography } from '@mui/material';
 
-interface LoadingSpinnerProps {
-  size?: number;
-}
-
-const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ size = 40 }) => {
+const LoadingSpinner: React.FC = () => {
   return (
     <Box
       display="flex"
+      flexDirection="column"
       justifyContent="center"
       alignItems="center"
-      minHeight="200px"
+      minHeight="100vh"
+      gap={2}
     >
-      <CircularProgress size={size} />
+      <CircularProgress size={60} />
+      <Typography variant="h6" color="text.secondary">
+        Caricamento...
+      </Typography>
     </Box>
   );
 };

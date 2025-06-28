@@ -4,11 +4,11 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 4000, // PostgreSQL frontend runs on port 4000
-    host: '0.0.0.0', // Allow external connections
+    port: 4000,
+    host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:4001', // PostgreSQL backend on port 4001
+        target: 'http://localhost:4001',
         changeOrigin: true,
         secure: false,
       },
@@ -16,7 +16,14 @@ export default defineConfig({
   },
   preview: {
     port: 4000,
-    host: '0.0.0.0',
+    host: true,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:4001',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   build: {
     outDir: 'dist',
