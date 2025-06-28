@@ -42,7 +42,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const profile = await authService.getProfile();
           setUser(profile);
         } catch (error) {
-          console.warn('Token expired or invalid, logging out');
           // Token non valido, rimuovi i dati
           localStorage.removeItem('token');
           localStorage.removeItem('user');
@@ -67,7 +66,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       localStorage.setItem('token', response.token);
       localStorage.setItem('user', JSON.stringify(response.user));
     } catch (error) {
-      console.error('Login failed:', error);
       throw error;
     }
   };
